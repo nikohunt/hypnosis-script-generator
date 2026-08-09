@@ -10,6 +10,24 @@ The entire project is a **single HTML file** designed to run in Perchance.org's 
 2. HTML body — wizard UI, session screen, post-session screen, modals, live panel (~400 lines)
 3. `<script>` — all JavaScript (~2800 lines)
 
+## Deploying to Perchance
+
+Perchance's generator editor has **two separate fields**, and `build/` has one file for each — they must be pasted separately, never concatenated:
+
+| File | Paste into | Notes |
+|---|---|---|
+| `build/perchance_1.txt` | The **top zone / code editor** (`$meta`, plugin imports, ends in `$output`) | Perchance's `{...}` / `[...]` template grammar applies here — imports, list output, etc. |
+| `build/perchance_2.txt` | The **HTML panel** (separate tab/field) | Raw HTML/CSS/JS, pasted as-is. This is *not* run through Perchance's template parser, so unescaped `{`/`[` in JS (arrow functions, object/array literals, regex classes, ...) is expected and fine. |
+
+```sh
+cat build/perchance_1.txt | pbcopy   # paste into the top zone
+cat build/perchance_2.txt | pbcopy   # paste into the HTML panel
+```
+
+Do **not** `cat` the two files together and paste them as one blob into a single field — that forces the HTML-panel content through the top zone's template parser, which will report spurious "mismatched curly/square bracket" errors on every multi-line `{`/`[` in the script.
+
+See `vendor/perchance-ai-character-chat/README.md` for Perchance's own official generator using this same two-file split.
+
 ### Key JavaScript sections (in order)
 
 | Section | Purpose |

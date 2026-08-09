@@ -1,3 +1,13 @@
+<!--
+
+This is the Hypnosis Script Generator panel. It is intentionally written as
+plain HTML + JavaScript and must be treated by Perchance as raw / passthrough
+content (not as a Perchance template), so that `.info`,
+`{`/`}` and `[` inside the scripts and styles are not interpreted as
+Perchance expressions.
+
+-->
+
 <style>
   :root {
     --bg: #050709;
