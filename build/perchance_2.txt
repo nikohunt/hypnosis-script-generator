@@ -246,6 +246,8 @@
   .toggle-row .hint { font-size: 0.75rem; color: var(--text-dim); display: block; margin-top: 2px; }
   .toggle-row input[type="checkbox"] { width: 18px; height: 18px; cursor: pointer; }
   .toggle-row input[type="range"] { flex: 1; max-width: 140px; }
+  .kokoro-bar { height: 6px; border-radius: 3px; background: #1a2230; overflow: hidden; margin-top: 8px; }
+  .kokoro-bar > div { height: 100%; background: var(--accent); transition: width .2s; }
  
   /* ============ BUTTONS ============ */
   .btn {
@@ -1071,6 +1073,20 @@ body.in-session .footer {
         <div class="sublabel" id="lengthHint"></div>
       </div>
 
+      <!-- ── ENHANCED VOICE ── -->
+      <div class="field-group">
+        <label class="field-label">enhanced voice</label>
+        <div class="toggle-row">
+          <label for="enhancedVoice">Kokoro-82M neural voice <span class="hint">Downloads ~80 MB once. Runs entirely in your browser — the script never leaves your device.</span></label>
+          <input type="checkbox" id="enhancedVoice">
+        </div>
+        <div id="kokoroLoadWrap" style="display:none;">
+          <div class="kokoro-bar"><div id="kokoroBarFill" style="width:0%;"></div></div>
+          <div class="sublabel" id="kokoroLoadStatus">Loading Kokoro model…</div>
+        </div>
+        <div class="sublabel" id="kokoroReadyLabel" style="display:none;"></div>
+      </div>
+
       <!-- ── NARRATOR ── -->
       <div class="field-group">
         <label class="field-label">narrator voice</label>
@@ -1678,6 +1694,7 @@ body.in-session .footer {
     soundscape: 'drone',
     length: 'medium',
     voice: null,
+    enhancedVoice: localStorage.getItem('hsg_kokoro_enhanced_v1') === '1',
     speechRate: 0.65,
     voicePitch: 0.85,
     voiceVolume: 1.0,
@@ -2063,11 +2080,63 @@ body.in-session .footer {
   }
 
   // ====================================================================
-  // VOICES, AUDIO, VISUAL
+  // VOICES — browser Web Speech (default) + Kokoro-82M in-browser (opt-in)
+  // Kokoro runs fully client-side via kokoro-js + Transformers.js: no
+  // server, no API key, and the script text never leaves the device.
   // ====================================================================
-  function loadVoices() {
+  const KOKORO_MODEL_ID = 'onnx-community/Kokoro-82M-v1.0-ONNX';
+  const KOKORO_JS_URL = 'https://cdn.jsdelivr.net/npm/kokoro-js@1.2.1/dist/kokoro.web.js';
+  const KOKORO_STORAGE = { enhanced: 'hsg_kokoro_enhanced_v1', voice: 'hsg_kokoro_voice_v1', browserVoice: 'hsg_browser_voice_v1' };
+
+  const _kokoro = {
+    loadPromise: null,
+    instance: null,
+    ready: false,
+    failed: false,
+  };
+  const enhancedVoiceEnabled = () => !!state.enhancedVoice;
+
+  const KOKORO_VOICES = [
+    { id: 'af_heart', label: 'af_heart — Heart · US female', gender: 'female', lang: 'en-us' },
+    { id: 'af_bella', label: 'af_bella — Bella · US female', gender: 'female', lang: 'en-us' },
+    { id: 'af_nicole', label: 'af_nicole — Nicole · US female', gender: 'female', lang: 'en-us' },
+    { id: 'af_aoife', label: 'af_aoife — Aoife · Irish female', gender: 'female', lang: 'en-us' },
+    { id: 'af_jessica', label: 'af_jessica — Jessica · US female', gender: 'female', lang: 'en-us' },
+    { id: 'af_sarah', label: 'af_sarah — Sarah · US female', gender: 'female', lang: 'en-us' },
+    { id: 'af_nova', label: 'af_nova — Nova · US female', gender: 'female', lang: 'en-us' },
+    { id: 'af_kore', label: 'af_kore — Kore · US female', gender: 'female', lang: 'en-us' },
+    { id: 'af_river', label: 'af_river — River · US female', gender: 'female', lang: 'en-us' },
+    { id: 'af_sky', label: 'af_sky — Sky · US female', gender: 'female', lang: 'en-us' },
+    { id: 'am_michael', label: 'am_michael — Michael · US male', gender: 'male', lang: 'en-us' },
+    { id: 'am_fenrir', label: 'am_fenrir — Fenrir · US male', gender: 'male', lang: 'en-us' },
+    { id: 'am_puck', label: 'am_puck — Puck · US male', gender: 'male', lang: 'en-us' },
+    { id: 'am_onyx', label: 'am_onyx — Onyx · US male', gender: 'male', lang: 'en-us' },
+    { id: 'am_echo', label: 'am_echo — Echo · US male', gender: 'male', lang: 'en-us' },
+    { id: 'am_eric', label: 'am_eric — Eric · US male', gender: 'male', lang: 'en-us' },
+    { id: 'am_liam', label: 'am_liam — Liam · US male', gender: 'male', lang: 'en-us' },
+    { id: 'am_adam', label: 'am_adam — Adam · US male', gender: 'male', lang: 'en-us' },
+    { id: 'bf_emma', label: 'bf_emma — Emma · UK female', gender: 'female', lang: 'en-gb' },
+    { id: 'bf_isabella', label: 'bf_isabella — Isabella · UK female', gender: 'female', lang: 'en-gb' },
+    { id: 'bf_alice', label: 'bf_alice — Alice · UK female', gender: 'female', lang: 'en-gb' },
+    { id: 'bf_lily', label: 'bf_lily — Lily · UK female', gender: 'female', lang: 'en-gb' },
+    { id: 'bm_george', label: 'bm_george — George · UK male', gender: 'male', lang: 'en-gb' },
+    { id: 'bm_lewis', label: 'bm_lewis — Lewis · UK male', gender: 'male', lang: 'en-gb' },
+    { id: 'bm_daniel', label: 'bm_daniel — Daniel · UK male', gender: 'male', lang: 'en-gb' },
+    { id: 'bm_fable', label: 'bm_fable — Fable · UK male', gender: 'male', lang: 'en-gb' },
+    { id: 'am_santa', label: 'am_santa — Santa · US male', gender: 'male', lang: 'en-us' },
+    { id: 'af_alloy', label: 'af_alloy — Alloy · US neutral', gender: 'neutral', lang: 'en-us' },
+  ];
+  const getKokoroVoice = id => KOKORO_VOICES.find(v => v.id === id) || null;
+
+  // --------------------------------------------------------------------
+  // Browser voices (Web Speech API — default)
+  // --------------------------------------------------------------------
+  function loadBrowserVoices() {
+    if (typeof speechSynthesis === 'undefined') return;
     const voices = speechSynthesis.getVoices();
     const select = $('voiceSelect');
+    if (!select) return;
+    const saved = localStorage.getItem(KOKORO_STORAGE.browserVoice);
     select.innerHTML = '';
     const scored = voices.filter(v => v.lang.startsWith('en')).map(v => {
       let s = 0;
@@ -2085,7 +2154,6 @@ body.in-session .footer {
       return { voice: v, score: s, tier };
     }).sort((a, b) => b.score - a.score);
 
-    // Group by tier
     const tiers = { neural: '★ Neural / Premium', cloud: '● Cloud', local: 'Local', basic: 'Basic' };
     const groups = {};
     scored.forEach(item => {
@@ -2104,25 +2172,216 @@ body.in-session .footer {
         opt.textContent = item.voice.name + ' (' + item.voice.lang + ')';
         opt.dataset.tier = tier;
         opt.dataset.local = item.voice.localService ? '1' : '0';
-        if (first) { opt.selected = true; first = false; }
+        if (saved === item.voice.name) opt.selected = true;
+        if (!saved && first) { opt.selected = true; first = false; }
         og.appendChild(opt);
       });
       select.appendChild(og);
     }
     updateVoiceInfo();
   }
+
+  // --------------------------------------------------------------------
+  // Kokoro voices (in-browser TTS)
+  // --------------------------------------------------------------------
+  function loadKokoroVoices() {
+    const select = $('voiceSelect');
+    if (!select) return;
+    const saved = localStorage.getItem(KOKORO_STORAGE.voice);
+    select.innerHTML = '';
+    const groups = [
+      { name: 'American English — female', key: 'usF' },
+      { name: 'American English — male', key: 'usM' },
+      { name: 'British English — female', key: 'gbF' },
+      { name: 'British English — male', key: 'gbM' },
+      { name: 'Special', key: 'other' },
+    ];
+    const buckets = { usF: [], usM: [], gbF: [], gbM: [], other: [] };
+    KOKORO_VOICES.forEach(v => {
+      let key = 'other';
+      if (v.lang === 'en-gb') key = v.gender === 'female' ? 'gbF' : 'gbM';
+      else if (v.lang === 'en-us') key = v.gender === 'female' ? 'usF' : v.gender === 'male' ? 'usM' : 'other';
+      buckets[key].push(v);
+    });
+    groups.forEach(g => {
+      const items = buckets[g.key];
+      if (!items.length) return;
+      const og = document.createElement('optgroup');
+      og.label = g.name;
+      items.forEach(v => {
+        const opt = document.createElement('option');
+        opt.value = v.id;
+        opt.textContent = v.label;
+        if (saved === v.id) opt.selected = true;
+        og.appendChild(opt);
+      });
+      select.appendChild(og);
+    });
+    if (!saved || !KOKORO_VOICES.some(v => v.id === saved)) select.value = 'af_heart';
+    updateVoiceInfo();
+  }
+
+  function loadVoices() { if (enhancedVoiceEnabled()) loadKokoroVoices(); else loadBrowserVoices(); }
+  if (typeof speechSynthesis !== 'undefined') { speechSynthesis.onvoiceschanged = loadVoices; }
+
   function updateVoiceInfo() {
     const select = $('voiceSelect');
     const info = $('voiceInfo');
-    if (!info || !select.selectedOptions[0]) return;
+    if (!info) return;
+    if (enhancedVoiceEnabled()) {
+      const v = getKokoroVoice(select.value || '');
+      if (!v) { info.textContent = 'Select a Kokoro voice.'; return; }
+      const region = v.lang === 'en-gb' ? 'British' : 'American';
+      info.textContent = `Kokoro neural voice · ${region} English · ${v.gender}-voiced · runs fully in your browser`;
+      return;
+    }
+    if (!select.selectedOptions[0]) return;
     const opt = select.selectedOptions[0];
     const tier = opt.dataset.tier || 'local';
     const local = opt.dataset.local === '1';
     const labels = { neural: '★ Neural voice — highest quality', cloud: '● Cloud voice — good quality, slight latency', local: 'Local voice — instant, lower quality', basic: 'Basic voice — functional' };
     info.textContent = (labels[tier] || '') + (local ? ' · runs offline' : ' · requires internet');
   }
-  if (typeof speechSynthesis !== 'undefined') { loadVoices(); speechSynthesis.onvoiceschanged = loadVoices; }
-  const getSelectedVoice = () => { const name = $('voiceSelect').value; return speechSynthesis.getVoices().find(v => v.name === name) || null; };
+
+  const getSelectedVoice = () => {
+    const id = $('voiceSelect')?.value;
+    if (enhancedVoiceEnabled()) return id || null;
+    return speechSynthesis.getVoices().find(v => v.name === id) || null;
+  };
+
+  (function initVoiceMode() {
+    const el = $('enhancedVoice');
+    if (el) el.checked = !!state.enhancedVoice;
+    loadVoices();
+  })();
+
+  // ------------------------------------------------------------------------
+  // KOKORO (IN-BROWSER) SYNTHESIS + PLAYBACK
+  // ------------------------------------------------------------------------
+
+  // Model download progress UI
+  function _setKokoroProgress(status) {
+    const wrap = $('kokoroLoadWrap');
+    if (wrap) wrap.style.display = 'block';
+    const txt = $('kokoroLoadStatus');
+    if (txt) txt.textContent = status || '';
+  }
+  function _hideKokoroProgress() {
+    const wrap = $('kokoroLoadWrap'); const fill = $('kokoroBarFill');
+    if (wrap) wrap.style.display = 'none';
+    if (fill) fill.style.width = '0%';
+  }
+  function _showKokoroProgress(ev) {
+    const fill = $('kokoroBarFill'); const txt = $('kokoroLoadStatus');
+    let pct = typeof ev?.progress === 'number' ? ev.progress : null;
+    if (ev && ev.total && ev.loaded) pct = (ev.loaded / ev.total) * 100;
+    if (fill && pct !== null) fill.style.width = Math.min(100, Math.max(0, pct)) + '%';
+    if (txt && ev) {
+      const file = ev.file ? ' (' + ev.file + ')' : '';
+      if (ev.total && ev.loaded) {
+        const mb = n => ((n || 0) / 1048576).toFixed(0) + ' MB';
+        txt.textContent = 'Downloading Kokoro model' + file + ' · ' + mb(ev.loaded) + ' / ' + mb(ev.total);
+      } else if (pct !== null) {
+        txt.textContent = 'Loading Kokoro ' + Math.round(pct) + '%';
+      } else if (ev.status === 'progress') {
+        txt.textContent = 'Loading Kokoro…';
+      }
+    }
+  }
+
+  // Loads the WASM/WebGPU model once; reused across sessions and visits.
+  function ensureKokoroLocal(onProgress) {
+    if (_kokoro.ready) return Promise.resolve(_kokoro.instance);
+    if (!_kokoro.loadPromise) {
+      _kokoro.loadPromise = (async () => {
+        const mod = await import(KOKORO_JS_URL);
+        const gpu = typeof navigator !== 'undefined' && !!navigator.gpu;
+        const opts = gpu ? { dtype: 'fp32', device: 'webgpu' } : { dtype: 'q8', device: 'wasm' };
+        if (onProgress) opts.progress_callback = onProgress;
+        _kokoro.instance = await mod.KokoroTTS.from_pretrained(KOKORO_MODEL_ID, opts);
+        _kokoro.ready = true;
+        return _kokoro.instance;
+      })();
+      _kokoro.loadPromise.catch(() => { _kokoro.loadPromise = null; _kokoro.failed = true; });
+    }
+    return _kokoro.loadPromise;
+  }
+
+  // Float32 samples → WAV blob for playback through the audio-element player.
+  function wavFromF32(samples, sampleRate) {
+    const n = samples.length;
+    const buf = new ArrayBuffer(44 + n * 2);
+    const v = new DataView(buf);
+    const str = (o, s) => { for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); };
+    str(0, 'RIFF'); v.setUint32(4, 36 + n * 2, true); str(8, 'WAVE');
+    str(12, 'fmt '); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+    v.setUint32(24, sampleRate, true); v.setUint32(28, sampleRate * 2, true);
+    v.setUint16(32, 2, true); v.setUint16(34, 16, true);
+    str(36, 'data'); v.setUint32(40, n * 2, true);
+    let o = 44;
+    for (let i = 0; i < n; i++, o += 2) v.setInt16(o, Math.max(-1, Math.min(1, samples[i])) * 0x7fff, true);
+    return new Blob([buf], { type: 'audio/wav' });
+  }
+
+  // Kokoro in-browser synthesis → WAV object URL.
+  async function kokoroSynth(text, voiceId, opts = {}) {
+    const tts = await ensureKokoroLocal();
+    const pitch = opts.pitch ?? (state.voicePitch || 0.85);
+    const speed = Math.min(2, Math.max(0.1, (opts.speed ?? (state.speechRate ?? 0.65)) / pitch));
+    const raw = await tts.generate(text, { voice: voiceId, speed: Number(speed.toFixed(3)) });
+    const samples = raw.data || raw.audio || raw;
+    return URL.createObjectURL(wavFromF32(samples, raw.sampleRate || 24000));
+  }
+
+  const _kokoroPlayers = [];
+  function kokoroStopAll() {
+    _kokoroPlayers.forEach(a => { try { a.pause(); a.removeAttribute('src'); a.load(); } catch (e) {} });
+    _kokoroPlayers.length = 0;
+  }
+  function kokoroPauseAll() { _kokoroPlayers.forEach(a => { try { a.pause(); } catch (e) {} }); }
+  function kokoroResumeAll() { _kokoroPlayers.forEach(a => { try { a.play(); } catch (e) {} }); }
+
+  // Stops/pauses BOTH engines regardless of the active mode.
+  function stopAllNarration() {
+    if ('speechSynthesis' in window) { try { speechSynthesis.cancel(); } catch (e) {} }
+    kokoroStopAll();
+  }
+  function applyNarrationPause() {
+    try {
+      if (state.paused) { speechSynthesis.pause(); kokoroPauseAll(); }
+      else { speechSynthesis.resume(); kokoroResumeAll(); }
+    } catch (e) {}
+  }
+
+  function speakChunk(text, voiceId, opts = {}) {
+    return new Promise(resolve => {
+      kokoroSynth(text, voiceId, opts).then(url => {
+        const audio = new Audio();
+        audio.src = url;
+        audio.volume = Math.min(1, Math.max(0, opts.volume ?? (state.voiceVolume ?? 1.0)));
+        audio.preservePitch = false;
+        audio.playbackRate = Math.min(2.0, Math.max(0.3, opts.pitch ?? (state.voicePitch || 0.85)));
+        _kokoroPlayers.push(audio);
+        let settled = false;
+        const cleanup = () => {
+          if (settled) return; settled = true;
+          clearTimeout(watchdog);
+          try { audio.pause(); } catch (e) {}
+          const idx = _kokoroPlayers.indexOf(audio);
+          if (idx >= 0) _kokoroPlayers.splice(idx, 1);
+          try { URL.revokeObjectURL(url); } catch (e) {}
+          resolve();
+        };
+        audio.addEventListener('ended', cleanup);
+        audio.addEventListener('error', cleanup);
+        const watchdog = setTimeout(cleanup, Math.max(12000, text.length * 175 + 3000));
+        audio.play().catch(cleanup);
+      }).catch(e => {
+        notify.error('Kokoro synthesis failed: ' + e.message);
+        resolve();
+      });
+    });
+  }
  
   // ====================================================================
   // SOUNDSCAPE ENGINE — procedural ambient audio (replaces AudioDrone)
@@ -3342,10 +3601,14 @@ Begin:`;
     const scriptText = $('scriptText').value.trim();
     if (!scriptText) { notify.warn('Generate or paste a script first.'); return; }
 
-    // Check TTS availability
-    const voiceList = (typeof speechSynthesis !== 'undefined') ? speechSynthesis.getVoices() : [];
-    if (voiceList.length === 0) {
-      if (!confirm('No text-to-speech voices are available in this browser. The session will run silently (visuals only). Continue anyway?')) return;
+    // Enhanced voice is opt-in; if it's still loading, fall back to the browser voice.
+    if (enhancedVoiceEnabled() && !_kokoro.ready && !_kokoro.loadPromise) {
+      _setKokoroProgress('Loading Kokoro model…');
+      ensureKokoroLocal(_showKokoroProgress).catch(() => {});
+    }
+    const usingEnhanced = enhancedVoiceEnabled() && _kokoro.ready;
+    if (enhancedVoiceEnabled() && !usingEnhanced) {
+      notify.warn('Enhanced voice is still loading — using the browser voice for this session.');
     }
 
     // Stop any configure-tab previews before starting session
@@ -3360,18 +3623,26 @@ Begin:`;
     state._currentPhase = 'settling';
     const method = getMethod();
 
-    // Double induction: pick a contrasting second voice
+    // Double induction: pick a contrasting second voice (engine-aware)
     state._doubleInduction = method.id === 'double-induction';
     state._secondVoice = null;
     if (state._doubleInduction) {
-      const voices = speechSynthesis.getVoices().filter(v => v.lang.startsWith('en') && v.name !== state.voice?.name);
-      // Try to find an opposite-gender voice for maximum contrast
-      const primaryName = (state.voice?.name || '').toLowerCase();
-      const isMale = /male|daniel|james|david|mark|george/i.test(primaryName) && !/female/i.test(primaryName);
-      const opposite = voices.find(v => isMale ? /female|samantha|karen|moira|zira/i.test(v.name) : /male|daniel|james|david|mark/i.test(v.name) && !/female/i.test(v.name));
-      state._secondVoice = opposite || voices[0] || null;
-      if (state._secondVoice) {
-        notify.info(`Double induction: ${state.voice?.name || 'primary'} + ${state._secondVoice.name}`);
+      if (usingEnhanced) {
+        const primary = getKokoroVoice(state.voice);
+        const target = primary && primary.gender === 'female' ? 'male' : 'female';
+        const opposite = KOKORO_VOICES.find(v => v.id !== state.voice && v.gender === target)
+          || KOKORO_VOICES.find(v => v.id !== state.voice);
+        state._secondVoice = opposite ? opposite.id : null;
+        if (state._secondVoice) {
+          notify.info(`Double induction: ${getKokoroVoice(state.voice)?.label} + ${getKokoroVoice(state._secondVoice)?.label}`);
+        }
+      } else {
+        const voices = speechSynthesis.getVoices().filter(v => v.lang.startsWith('en') && v.name !== state.voice?.name);
+        const primaryName = (state.voice?.name || '').toLowerCase();
+        const isMale = /male|daniel|james|david|mark|george/i.test(primaryName) && !/female/i.test(primaryName);
+        const opposite = voices.find(v => isMale ? /female|samantha|karen|moira|zira/i.test(v.name) : /male|daniel|james|david|mark/i.test(v.name) && !/female/i.test(v.name));
+        state._secondVoice = opposite || voices[0] || null;
+        if (state._secondVoice) notify.info(`Double induction: ${state.voice?.name || 'primary'} + ${state._secondVoice.name}`);
       }
     }
 
@@ -3477,7 +3748,7 @@ Begin:`;
         notify.warn('Session exceeded maximum expected duration — auto-finishing.');
         state._finishing = true;
         state.abortFlag = true;
-        speechSynthesis.cancel();
+        stopAllNarration();
         finishSession(false);
       }
     }, (expectedSec * 2 + 300) * 1000);
@@ -3573,6 +3844,16 @@ Begin:`;
   }
 
   function speak(text) {
+    // Enhanced mode: Kokoro-82M generated locally (no data leaves the browser).
+    if (enhancedVoiceEnabled() && _kokoro.ready) {
+      const voice = state.voice || getSelectedVoice();
+      const tasks = [speakChunk(text, voice, {})];
+      if (state._doubleInduction && state._secondVoice) {
+        tasks.push(speakChunk(text, state._secondVoice, { pitch: 0.75, volume: 0.7 }));
+      }
+      return Promise.all(tasks).then(() => {});
+    }
+    // Default mode: browser Web Speech API.
     return new Promise(resolve => {
       if (!('speechSynthesis' in window)) { setTimeout(resolve, text.length * 80); return; }
       // Always cancel before speaking to reset Chrome's internal state
@@ -3682,7 +3963,7 @@ Begin:`;
     clearTimeout(state._safetyTimeout);
     closeLivePanel();
     stopRecording(); // Stop any active recording before tearing down audio
-    await drone.stop(); stopVisuals(); speechSynthesis.cancel();
+    await drone.stop(); stopVisuals(); stopAllNarration();
     document.body.classList.remove('in-session');
     switchScreen('post-screen');
 
@@ -3809,7 +4090,7 @@ Begin:`;
     if (state._finishing) return; // Already finishing — prevent double-call
     state._finishing = true;
     state.abortFlag = true;
-    speechSynthesis.cancel();
+    stopAllNarration();
     // Use persona-matched re-alert if available
     const persona = getPersona();
     const reAlert = PERSONA_REALERTS[persona.id] ||
@@ -3819,7 +4100,7 @@ Begin:`;
   function togglePause() {
     state.paused = !state.paused;
     $('pauseBtn').textContent = state.paused ? 'resume' : 'pause';
-    if (state.paused) speechSynthesis.pause(); else speechSynthesis.resume();
+    applyNarrationPause();
   }
  
   // ====================================================================
@@ -4116,9 +4397,9 @@ Begin:`;
     openSaveScriptModal();
   });
 
-  // Voice preview with stop
-  $('voicePreviewBtn').addEventListener('click', () => {
-    const voice = getSelectedVoice();
+  // Voice preview with stop (engine-aware)
+  let _kkPreviewAbort = false;
+  $('voicePreviewBtn').addEventListener('click', async () => {
     const samples = [
       "And now... noticing the weight of your hands... just resting there...",
       "Each breath carrying you a little deeper now... that's right...",
@@ -4126,24 +4407,94 @@ Begin:`;
       "Drifting comfortably... nowhere to be... nothing to do...",
     ];
     const sample = samples[Math.floor(Math.random() * samples.length)];
+    const _done = () => { _voicePreviewing = false; togglePreviewBtns('voice', false); };
+
+    // Enhanced mode: Kokoro generated in-browser
+    if (enhancedVoiceEnabled()) {
+      if (!_kokoro.ready) {
+        if (_kokoro.loadPromise) { notify.warn('Enhanced voice is still loading — try again in a moment.'); return; }
+        _kkPreviewAbort = false;
+        _voicePreviewing = true; togglePreviewBtns('voice', true);
+        _setKokoroProgress('Loading Kokoro model — first run downloads ~80 MB…');
+        try {
+          await ensureKokoroLocal(_showKokoroProgress);
+          await speakChunk(sample, getSelectedVoice(), {});
+        } catch (e) {
+          notify.warn('Enhanced voice failed: ' + e.message);
+        }
+        _hideKokoroProgress();
+        _done();
+        return;
+      }
+      _kkPreviewAbort = false;
+      _voicePreviewing = true; togglePreviewBtns('voice', true);
+      try {
+        await speakChunk(sample, getSelectedVoice(), {});
+      } catch (e) {
+        notify.warn('Preview failed: ' + e.message);
+      } finally {
+        if (!_kkPreviewAbort) _done();
+      }
+      return;
+    }
+
+    // Default mode: browser Web Speech
     if (!('speechSynthesis' in window)) { notify.info('Text-to-speech is not available in this browser.'); return; }
+    const voice = getSelectedVoice();
     speechSynthesis.cancel();
     const u = new SpeechSynthesisUtterance(sample);
     u.voice = voice; u.rate = state.speechRate; u.pitch = state.voicePitch || 0.85; u.volume = state.voiceVolume ?? 1.0;
-    u.onend = () => { _voicePreviewing = false; togglePreviewBtns('voice', false); };
-    u.onerror = u.onend;
+    u.onend = _done; u.onerror = _done;
     speechSynthesis.speak(u);
-    _voicePreviewing = true;
-    togglePreviewBtns('voice', true);
+    _voicePreviewing = true; togglePreviewBtns('voice', true);
   });
   $('voiceStopBtn')?.addEventListener('click', () => {
-    speechSynthesis.cancel();
+    _kkPreviewAbort = true;
+    stopAllNarration();
     _voicePreviewing = false;
     togglePreviewBtns('voice', false);
   });
 
-  // Voice select change → update info
-  $('voiceSelect').addEventListener('change', updateVoiceInfo);
+  // Voice select change → persist per-engine voice
+  $('voiceSelect').addEventListener('change', () => {
+    localStorage.setItem(enhancedVoiceEnabled() ? KOKORO_STORAGE.voice : KOKORO_STORAGE.browserVoice, $('voiceSelect').value);
+    updateVoiceInfo();
+  });
+
+  // Enhanced voice toggle → swap engines and load the Kokoro model once
+  $('enhancedVoice').addEventListener('change', async () => {
+    const on = $('enhancedVoice').checked;
+    state.enhancedVoice = on;
+    localStorage.setItem(KOKORO_STORAGE.enhanced, on ? '1' : '0');
+    const rl = $('kokoroReadyLabel');
+    loadVoices();
+    updateVoiceInfo();
+    if (!on) {
+      _hideKokoroProgress();
+      if (rl) rl.style.display = 'none';
+      return;
+    }
+    if (_kokoro.ready) {
+      if (rl) { rl.style.display = 'block'; rl.textContent = 'Kokoro model ready — voices run on this device.'; }
+      notify.info('Enhanced voice enabled.');
+      return;
+    }
+    _setKokoroProgress('Loading Kokoro model — first run downloads ~80 MB…');
+    try {
+      await ensureKokoroLocal(_showKokoroProgress);
+      _hideKokoroProgress();
+      if (rl) { rl.style.display = 'block'; rl.textContent = 'Kokoro model ready — voices run on this device.'; }
+      notify.info('Kokoro enhanced voice ready.');
+    } catch (e) {
+      _hideKokoroProgress();
+      notify.error('Failed to load Kokoro: ' + e.message);
+      state.enhancedVoice = false;
+      $('enhancedVoice').checked = false;
+      localStorage.setItem(KOKORO_STORAGE.enhanced, '0');
+      loadVoices();
+      updateVoiceInfo();
+    }
+  });
 
   // Soundscape preview
   $('soundPreviewBtn')?.addEventListener('click', previewSoundscape);
@@ -4154,14 +4505,14 @@ Begin:`;
   $('vizStopBtn')?.addEventListener('click', stopVizPreview);
 
   // Stop all previews when leaving Step 4
-  const _stopAllPreviews = () => { stopVizPreview(); stopSoundscapePreview(); if (_voicePreviewing) { speechSynthesis.cancel(); _voicePreviewing = false; togglePreviewBtns('voice', false); } };
+  const _stopAllPreviews = () => { stopVizPreview(); stopSoundscapePreview(); if (_voicePreviewing) { stopAllNarration(); _voicePreviewing = false; togglePreviewBtns('voice', false); } };
 
   // ====================================================================
   // CAPABILITY DETECTION (from Studio capabilities.js)
   // ====================================================================
   const caps = { tts: false, webAudio: false, wakeLock: false, fullscreen: false, vibration: false };
   function detectCaps() {
-    caps.tts = 'speechSynthesis' in window;
+    caps.tts = 'speechSynthesis' in window || (typeof navigator !== 'undefined' && !!navigator.gpu);
     caps.webAudio = 'AudioContext' in window || 'webkitAudioContext' in window;
     caps.wakeLock = 'wakeLock' in navigator;
     caps.fullscreen = 'requestFullscreen' in document.documentElement || 'webkitRequestFullscreen' in document.documentElement;
