@@ -2901,24 +2901,24 @@ Output EXACTLY this JSON, no other text, no markdown fences:
   "explanation": "ONE sentence on the technique used"
 }`;
 
-    try {
-      const data = await root.aiTextPlugin({ instruction, startWith: '{', stopSequences: ['\n\n\n'], hideStartWith: true });
-      if (data.stopReason === 'error') throw new Error('AI generation encountered an error.');
-      let text = (data.generatedText || '').trim();
-      if (!text.startsWith('{')) text = '{' + text;
-      const lb = text.lastIndexOf('}'); if (lb > -1) text = text.substring(0, lb + 1);
-      state.craftedSuggestion = JSON.parse(text);
-      showCrafted();
-      updateStepUI();
-      notify.success('Suggestion crafted successfully.');
-    } catch (e) { console.error(e); notify.warn('Crafting failed: ' + e.message + '. Try again.'); }
-    finally {
-      _aiInProgress = false;
-      stopTimer();
-      setLoading('craftBtn', false, 'craft hypnotic suggestion →');
-      setLoading('recraftBtn', false);
-      $('craftProgress').classList.remove('visible');
-    }
+  try {
+    const data = await root.aiTextPlugin({ instruction, startWith: '{', stopSequences: ['\n\n\n'], hideStartWith: true });
+    if (data.stopReason === 'error') throw new Error('AI generation encountered an error.');
+    let text = (data.generatedText || '').trim();
+    if (!text.startsWith('{')) text = '{' + text;
+    const lb = text.lastIndexOf('}'); if (lb > -1) text = text.substring(0, lb + 1);
+    state.craftedSuggestion = JSON.parse(text);
+    showCrafted();
+    updateStepUI();
+    notify.success('Suggestion crafted successfully.');
+  } catch (e) { console.error(e); notify.warn('Crafting failed: ' + e.message + '. Try again.'); }
+  finally {
+    _aiInProgress = false;
+    stopTimer();
+    setLoading('craftBtn', false, 'craft hypnotic suggestion →');
+    setLoading('recraftBtn', false);
+    $('craftProgress').classList.remove('visible');
+  }
   }
   function showCrafted() {
     const c = state.craftedSuggestion;
@@ -2976,14 +2976,14 @@ REINFORCEMENT VARIANTS: ${JSON.stringify(state.craftedSuggestion.reinforcementPh
 ⚠️ In EMERGENCE, BEFORE count-up: state core effect one last time as lasting anchor.
 ` : '';
  
-    const demoBlock = method.category === 'demonstration' ? `
+  const demoBlock = method.category === 'demonstration' ? `
 ⚠️ DEMONSTRATION METHOD — goal is a tangible, noticeable effect the user can verify.
 • DIRECT present-tense suggestions ("your hand IS becoming heavy")
 • In WORK phase: BUILD the effect progressively
 • Include a TEST at end of WORK or start of EMERGENCE — instruct the user to attempt the "impossible" action
 ` : '';
  
-    const instruction = `You are ${persona.name}. ${persona.systemPrompt}
+  const instruction = `You are ${persona.name}. ${persona.systemPrompt}
  
 A user has requested a self-hypnosis session. Write the COMPLETE spoken script from start to finish — word-for-word, as you would deliver it aloud — in your voice.
  
@@ -3024,21 +3024,21 @@ ${method.category === 'demonstration' ? 'FIRST: deliver the TEST — invite user
  
 Begin:`;
  
-    try {
-      const data = await root.aiTextPlugin({ instruction, startWith: '===SETTLING===', stopSequences: ['\n\n\n\n', '[END OF SCRIPT]', '\n\n===END==='], hideStartWith: true });
-      if (data.stopReason === 'error') throw new Error('AI returned an error. Try again.');
-      const text = (data.generatedText || '').trim();
-      if (!text || text.length < 100) throw new Error('Script too short or empty');
-      const fullScript = '===SETTLING===' + (text.startsWith('\n') ? '' : '\n') + text;
-      state.fullScript = fullScript;
-      state.parsedScript = parseScript(fullScript);
-      showScript();
-      updateStepUI();
-      notify.success('Script generated — review and edit below.');
-    } catch (e) {
-      console.error(e);
-      notify.error('Script generation failed: ' + e.message);
-    } finally { _aiInProgress = false; stopTimer(); setLoading('generateScriptBtn', false, 'generate full script'); setLoading('regenScriptBtn', false); $('craftProgress').classList.remove('visible'); }
+  try {
+    const data = await root.aiTextPlugin({ instruction, startWith: '===SETTLING===', stopSequences: ['\n\n\n\n', '[END OF SCRIPT]', '\n\n===END==='], hideStartWith: true });
+    if (data.stopReason === 'error') throw new Error('AI returned an error. Try again.');
+    const text = (data.generatedText || '').trim();
+    if (!text || text.length < 100) throw new Error('Script too short or empty');
+    const fullScript = '===SETTLING===' + (text.startsWith('\n') ? '' : '\n') + text;
+    state.fullScript = fullScript;
+    state.parsedScript = parseScript(fullScript);
+    showScript();
+    updateStepUI();
+    notify.success('Script generated — review and edit below.');
+  } catch (e) {
+    console.error(e);
+    notify.error('Script generation failed: ' + e.message);
+  } finally { _aiInProgress = false; stopTimer(); setLoading('generateScriptBtn', false, 'generate full script'); setLoading('regenScriptBtn', false); $('craftProgress').classList.remove('visible'); }
   }
  
   function parseScript(text) {
