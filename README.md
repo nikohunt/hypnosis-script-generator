@@ -174,6 +174,23 @@ This is a Perchance generator — no installation required.
 
 ---
 
+## Enhanced Voice (Kokoro-82M)
+
+By default the generator narrates with your browser's built-in speech engine. For
+much higher voice quality, enable **Configure → narrator → Enhanced voice (Kokoro)**.
+
+Kokoro-82M is a 82M-parameter neural TTS model that runs **entirely in your
+browser** via `kokoro-js` + Transformers.js — no server, no API key, and your
+script text never leaves the device.
+
+- On first enable it downloads the model once (~80 MB WASM, or ~330 MB WebGPU
+  where available) and shows a progress bar; afterwards it's cached.
+- Pick a voice from the gallery (`af_heart`, `af_bella`, `am_michael`,
+  `bf_emma`, …); the chosen voice stays constant within a session.
+- Works fully offline after the first download.
+
+---
+
 ## License
 
 MIT — see [LICENSE](LICENSE).

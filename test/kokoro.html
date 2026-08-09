@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kokoro enhanced-voice test</title>
+<style>
+  body { font-family: system-ui, sans-serif; background: #0f141b; color: #dfe6ee; max-width: 620px; margin: 48px auto; padding: 0 20px; }
+  h1 { font-size: 1.1rem; letter-spacing: .05em; text-transform: uppercase; color: #8a97aa; }
+  select, button { font-size: 1rem; padding: 10px 14px; border-radius: 8px; border: 1px solid #23303f; background: #161d27; color: #dfe6ee; }
+  button { cursor: pointer; background: #2f7ff0; color: #0f141b; font-weight: 600; border: none; }
+  button:disabled { opacity: .45; cursor: wait; }
+  .row { display: flex; gap: 10px; margin: 14px 0; align-items: center; flex-wrap: wrap; }
+  #bar { height: 8px; border-radius: 4px; background: #1b2430; overflow: hidden; margin: 14px 0; }
+  #fill { height: 100%; width: 0%; background: #2f7ff0; transition: width .15s; }
+  #status { font-size: .85rem; color: #8a97aa; min-height: 1.2em; }
+  #engine { font-size: .85rem; color: #5fcc7a; min-height: 1.2em; }
+</style>
+</head>
+<body>
+  <h1>Kokoro enhanced-voice test</h1>
+  <div class="row">
+    <select id="voice">
+      <option value="af_heart">af_heart — Heart (US F)</option>
+      <option value="af_bella">af_bella — Bella (US F)</option>
+      <option value="am_michael">am_michael — Michael (US M)</option>
+      <option value="bf_emma">bf_emma — Emma (UK F)</option>
+      <option value="bm_george">bm_george — George (UK M)</option>
+    </select>
+    <button id="loadBtn">Load model (~80&nbsp;MB) &amp; speak</button>
+    <button id="againBtn" style="display:none;">Speak again</button>
+  </div>
+  <div id="engine"></div>
+  <div id="bar"><div id="fill"></div></div>
+  <div id="status">Not loaded yet.</div>
+
+<script>
+const SAMPLE = "And now... noticing the weight of your hands... just resting there... drifting comfortably... nowhere to be... nothing to do.";
+const MODEL = "onnx-community/Kokoro-82M-v1.0-ONNX";
+const JS_URL = "https://cdn.jsdelivr.net/npm/kokoro-js@1.2.1/dist/kokoro.web.js";
+
+const $ = id => document.getElementById(id);
+let tts = null;
+
+function fmt(p) {
+  const mb = n => ((n || 0) / 1048576).toFixed(0) + " MB";
+  return (p.total && p.loaded) ? `downloading ${p.file || ""} · ${mb(p.loaded)} / ${mb(p.total)}`
+       : (typeof p.progress === "number") ? `loading ${Math.round(p.progress)}%` : "loading…";
+}
+
+function wavFromF32(samples, sampleRate) {
+  const n = samples.length, buf = new ArrayBuffer(44 + n * 2), v = new DataView(buf);
+  const str = (o, s) => { for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); };
+  str(0, "RIFF"); v.setUint32(4, 36 + n * 2, true); str(8, "WAVE");
+  str(12, "fmt "); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+  v.setUint32(24, sampleRate, true); v.setUint32(28, sampleRate * 2, true);
+  v.setUint16(32, 2, true); v.setUint16(34, 16, true);
+  str(36, "data"); v.setUint32(40, n * 2, true);
+  let o = 44;
+  for (let i = 0; i < n; i++, o += 2) v.setInt16(o, Math.max(-1, Math.min(1, samples[i])) * 0x7fff, true);
+  return new Blob([buf], { type: "audio/wav" });
+}
+
+async function speak(voiceId) {
+  $("status").textContent = "Generating audio…";
+  const audio = await tts.generate(SAMPLE, { voice: voiceId, speed: 0.65 });
+  const samples = audio.data || audio.audio || audio;
+  const url = URL.createObjectURL(wavFromF32(samples, audio.sampleRate || 24000));
+  const el = new Audio(url);
+  el.onended = () => { URL.revokeObjectURL(url); $("status").textContent = "Done — that's Kokoro. Sounds better than the browser voice?"; };
+  el.play();
+}
+
+async function loadAndSpeak() {
+  const btn = $("loadBtn");
+  btn.disabled = true;
+  $("status").textContent = "Importing kokoro-js from jsDelivr…";
+  try {
+    const mod = await import(JS_URL);
+    const gpu = !!navigator.gpu;
+    const opts = gpu ? { dtype: "fp32", device: "webgpu" } : { dtype: "q8", device: "wasm" };
+    opts.progress_callback = p => { $("fill").style.width = (p.total ? (p.loaded / p.total) * 100 : (p.progress || 0)) + "%"; $("status").textContent = fmt(p); };
+    $("engine").textContent = `Engine: Kokoro-82M (${gpu ? "WebGPU fp32 · ~330 MB" : "WASM q8 · ~82 MB"}) — first run downloads the model, then it's cached.`;
+    tts = await mod.KokoroTTS.from_pretrained(MODEL, opts);
+    $("fill").style.width = "100%";
+    $("status").textContent = "Model ready ✓";
+    $("againBtn").style.display = "";
+    await speak($("voice").value);
+  } catch (e) {
+    $("status").textContent = "Failed: " + e.message;
+    btn.disabled = false;
+  }
+}
+
+$("loadBtn").addEventListener("click", loadAndSpeak);
+$("againBtn").addEventListener("click", () => speak($("voice").value));
+</script>
+</body>
+</html>
