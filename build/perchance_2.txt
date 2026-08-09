@@ -828,9 +828,11 @@ body.in-session .footer {
   /* ============ SHARE MODAL ============ */
 
   /* ============ COOLDOWN OVERLAY ============ */
+  .cooldown-overlay {
     position: fixed; inset: 0; background: rgba(0,0,0,0.85);
     text-align: center;
   }
+  .cooldown-title {
     font-size: 2.5rem; font-weight: 200; color: var(--accent);
     margin-bottom: 8px;
   }
