@@ -1445,7 +1445,6 @@ body.in-session .footer {
     <div class="cooldown-label">seconds before next session</div>
     <div class="sublabel" style="margin-top: 10px; color: var(--text-faint);">Give yourself time to re-orient.</div>
   </div>
-</div>
  
 <script>
   // ====================================================================
